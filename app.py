@@ -59,7 +59,7 @@ timestamp TEXT
 """))
 s.commit()
 
-# --- دوال إدارة المندوبين وشحن الرصيد ---
+# --- دوال إدارة المندوبين ---
 
 def add_driver(driver_id, name, bike_plate, whatsapp, notes, is_active):
 conn = get_connection()
@@ -94,6 +94,8 @@ for fn in (get_driver_info, get_all_drivers_details, get_totals, search_driver):
 try: fn.clear()
 except Exception: pass
 st.success(f"تم تحديث بيانات المندوب {name} بنجاح.")
+
+# --- دوال الرصيد والتوصيلات ---
 
 def update_balance(driver_id, amount, trans_type):
 info = get_driver_info(driver_id)
@@ -258,8 +260,25 @@ with tab2:
     driver_select = st.selectbox("اختر المندوب", drivers_list['الاسم'])
     action = st.radio("العملية", ["شحن رصيد", "خصم توصيلة"])
     amount = st.number_input("المبلغ", min_value=0.0, step=0.1)
-    if st.button("تنفيذ"):
+    if st.button("تنفيذ العملية"):
         driver_id = drivers_list.loc[drivers_list['الاسم']==driver_select, 'الترقيم'].values[0]
         update_balance(driver_id, amount if action=="شحن رصيد" else -amount, action)
         st.success("تمت العملية بنجاح! 🎉")
+
+# --- واجهة التقارير ---
+with tab3:
+    st.subheader("التقارير")
+    total_balance, total_charged, total_deducted, total_deliveries = get_totals()
+    st.metric("إجمالي الرصيد الحالي", total_balance)
+    st.metric("إجمالي الرصيد المشحون", total_charged)
+    st.metric("إجمالي الرصيد المخصوم", total_deducted)
+    st.metric("إجمالي عدد التوصيلات", total_deliveries)
+    st.dataframe(get_all_drivers_details())
+
+# --- واجهة البحث والتاريخ ---
+with tab4:
+    st.subheader("تاريخ العمليات")
+    search_id = st.text_input("ابحث عن المندوب ID (اتركه فارغ لعرض الكل)")
+    history_df = get_history(search_id if search_id else None)
+    st.dataframe(history_df)
 ```
