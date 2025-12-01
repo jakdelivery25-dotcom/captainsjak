@@ -102,21 +102,18 @@ current_balance = info['balance']
 name = info['name']
 new_balance = current_balance + amount
 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-```
 conn = get_connection()
 with conn.session as s:
-    s.execute(text("UPDATE drivers SET balance=:new_bal WHERE driver_id=:id"), {"new_bal": new_balance, "id": driver_id})
-    s.execute(text("""
-        INSERT INTO transactions (driver_name, amount, type, timestamp)
-        VALUES (:driver_name, :amount, :type, :timestamp)
-    """), {"driver_name": f"{name} (ID:{driver_id})", "amount": amount, "type": trans_type, "timestamp": timestamp})
-    s.commit()
+s.execute(text("UPDATE drivers SET balance=:new_bal WHERE driver_id=:id"), {"new_bal": new_balance, "id": driver_id})
+s.execute(text("""
+INSERT INTO transactions (driver_name, amount, type, timestamp)
+VALUES (:driver_name, :amount, :type, :timestamp)
+"""), {"driver_name": f"{name} (ID:{driver_id})", "amount": amount, "type": trans_type, "timestamp": timestamp})
+s.commit()
 for fn in (get_driver_info, search_driver, get_all_drivers_details, get_totals, get_history, get_deliveries_count_per_driver):
-    try: fn.clear()
-    except Exception: pass
+try: fn.clear()
+except Exception: pass
 return new_balance
-```
 
 # --- دوال جلب البيانات ---
 
@@ -256,30 +253,13 @@ with tab1:
 
 # --- واجهة شحن الرصيد وخصم التوصيلات ---
 with tab2:
-    st.subheader("شحن الرصيد وخصم التوصيلات")
-    selected_driver = st.text_input("أدخل ID المندوب")
+    st.subheader("شحن أو خصم الرصيد")
+    drivers_list = get_all_drivers_details()
+    driver_select = st.selectbox("اختر المندوب", drivers_list['الاسم'])
+    action = st.radio("العملية", ["شحن رصيد", "خصم توصيلة"])
     amount = st.number_input("المبلغ", min_value=0.0, step=0.1)
-    if st.button("شحن الرصيد"):
-        new_bal = update_balance(selected_driver, amount, "شحن رصيد")
-        st.success(f"تم شحن الرصيد. الرصيد الجديد: {new_bal} أوقية")
-    if st.button("خصم توصيلة"):
-        new_bal = update_balance(selected_driver, -DEDUCTION_AMOUNT, "خصم توصيلة")
-        st.success(f"تم خصم {DEDUCTION_AMOUNT} أوقية. الرصيد الجديد: {new_bal} أوقية")
-
-# --- واجهة التقارير ---
-with tab3:
-    st.subheader("ملخص الحسابات")
-    total_balance, total_charged, total_deducted, total_deliveries = get_totals()
-    st.metric("إجمالي الرصيد الحالي", total_balance)
-    st.metric("إجمالي الرصيد المشحون", total_charged)
-    st.metric("إجمالي المبالغ المخصومة", total_deducted)
-    st.metric("إجمالي عدد التوصيلات", total_deliveries)
-    st.dataframe(get_all_drivers_details())
-
-# --- واجهة البحث والتاريخ ---
-with tab4:
-    st.subheader("سجل العمليات")
-    driver_hist_id = st.text_input("بحث حسب ID المندوب (اختياري)")
-    df_hist = get_history(driver_hist_id if driver_hist_id else None)
-    st.dataframe(df_hist)
+    if st.button("تنفيذ"):
+        driver_id = drivers_list.loc[drivers_list['الاسم']==driver_select, 'الترقيم'].values[0]
+        update_balance(driver_id, amount if action=="شحن رصيد" else -amount, action)
+        st.success("تمت العملية بنجاح! 🎉")
 ```
