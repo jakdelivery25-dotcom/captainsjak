@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 import os
 import io
-from sqlalchemy import text 
+from sqlalchemy import text
 
 # --- إعدادات التطبيق ---
 DEDUCTION_AMOUNT = 15.0  
