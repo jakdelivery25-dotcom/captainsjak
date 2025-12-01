@@ -3,10 +3,9 @@ import pandas as pd
 from datetime import datetime
 import os
 import io
-from sqlalchemy import text # السطر 6: تم التأكد من خلوه من U+00A0
+from sqlalchemy import text 
 
 # --- إعدادات التطبيق ---
-# تأكد من أن هذه المسافات (U+00A0) قد تم حذفها يدوياً
 DEDUCTION_AMOUNT = 15.0
 ADMIN_KEY = "jak2831"
 IMAGE_PATH = "logo.png"
@@ -21,7 +20,6 @@ def get_connection():
 # 🆕 دالة مساعدة لتشغيل صوت تنبيه
 def play_sound(sound_file):
     """يشغل ملف صوتي باستخدام HTML."""
-    # هذا الجزء يعتمد على وجود ملفات الصوت في مسار معين (مثل static/success.mp3)
     full_path = os.path.join("static", sound_file)
     try:
         if os.path.exists(full_path):
@@ -40,6 +38,7 @@ def play_sound(sound_file):
         pass
 
 # --- دوال التعامل مع قاعدة البيانات (تم تحديثها) ---
+# يجب أن تعمل الدوال التي تُنشئ/تُعدّل على قاعدة البيانات بدون @st.cache_data
 def init_db():
     conn = get_connection()
     with conn.session as s:
@@ -66,7 +65,6 @@ def init_db():
         """))
         s.commit()
 
-# 🆕 تم تحديثها لاستخدام المعاملات المسماة (:param_name)
 def add_driver(driver_id, name, bike_plate, whatsapp, notes, is_active):
     conn = get_connection()
     try:
@@ -93,15 +91,12 @@ def add_driver(driver_id, name, bike_plate, whatsapp, notes, is_active):
             st.error(f"حدث خطأ أثناء الإضافة: {e}")
         play_sound("error.mp3")
 
-# 🛑 تم تعديل هذه الدالة:
-# 1. إضافة @st.cache_data(ttl=None) لحل مشكلة UnhashableParamError.
-# 2. تحسين البحث ليشمل الاسم والبحث الجزئي (ILIKE).
-@st.cache_data(ttl=None)
+# 🛑 تم إضافة @st.cache_data
+@st.cache_data(ttl=None) 
 def search_driver(search_term):
     """البحث عن مندوب بواسطة driver_id أو whatsapp أو الاسم باستخدام البحث الجزئي"""
     conn = get_connection()
     
-    # تحضير مصطلح البحث للبحث الجزئي باستخدام ILIKE
     search_pattern = f"%{search_term}%"
     
     query = text("""
@@ -121,13 +116,12 @@ def search_driver(search_term):
         return {"driver_id": result['driver_id'], "name": result['name'], "balance": result['balance'], "is_active": result['is_active']}
     return None
 
-# 🛑 تم تعديل هذه الدالة:
-# 1. إضافة @st.cache_data(ttl=None) لحل مشكلة UnhashableParamError.
+# 🛑 تم إضافة @st.cache_data
 @st.cache_data(ttl=None)
 def get_driver_info(driver_id):
     conn = get_connection()
     query = text("SELECT name, balance, is_active FROM drivers WHERE driver_id = :id")
-    # إزالة ttl="0" والاعتماد على @st.cache_data(ttl=None)
+    # تم حذف ttl="0"
     df = conn.query(query, params={"id": driver_id})
     
     if not df.empty:
@@ -135,7 +129,6 @@ def get_driver_info(driver_id):
         return {"name": result['name'], "balance": result['balance'], "is_active": result['is_active']}
     return None
 
-# 🆕 تم تحديثها لاستخدام conn.session
 def update_driver_details(driver_id, name, bike_plate, whatsapp, notes, is_active):
     conn = get_connection()
     with conn.session as s:
@@ -152,9 +145,10 @@ def update_driver_details(driver_id, name, bike_plate, whatsapp, notes, is_activ
             "id": driver_id
         })
         s.commit()
+    # مسح الكاش لدالة get_driver_info لضمان جلب البيانات المحدثة
+    get_driver_info.clear() 
     st.success(f"تم تحديث بيانات المندوب {name} بنجاح.")
 
-# 🆕 تم تحديثها لاستخدام conn.session وتنفيذ عمليتي كتابة متتاليتين
 def update_balance(driver_id, amount, trans_type):
     # لا نستخدم الكاش هنا لضمان الحصول على أحدث رصيد
     info = get_driver_info(driver_id)
@@ -165,6 +159,7 @@ def update_balance(driver_id, amount, trans_type):
     new_balance = current_balance + amount
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    conn = get_connection()
     with conn.session as s:
         # 1. تحديث الرصيد
         update_sql = text("UPDATE drivers SET balance=:new_bal WHERE driver_id=:id")
@@ -186,6 +181,8 @@ def update_balance(driver_id, amount, trans_type):
     get_driver_info.clear() 
     return new_balance
 
+# 🛑 تم إضافة @st.cache_data لحل المشكلة الأخيرة
+@st.cache_data(ttl=60)
 def get_deliveries_count_per_driver():
     conn = get_connection()
     query = text("""
@@ -197,42 +194,51 @@ def get_deliveries_count_per_driver():
     GROUP BY
         SUBSTR(driver_name, POSITION(':' IN driver_name)+1, LENGTH(driver_name)-POSITION(':' IN driver_name)-1)
     """)
-    df = conn.query(query, ttl="0")
+    # تم حذف ttl="0"
+    df = conn.query(query)
     return df
 
+# 🛑 تم إضافة @st.cache_data
+@st.cache_data(ttl=60)
 def get_totals():
     conn = get_connection()
     
-    # استخدام conn.query مع ttl=0 للحصول على أحدث نتيجة كـ DataFrame
-    total_balance = conn.query("SELECT COALESCE(SUM(balance), 0.0) FROM drivers", ttl="0").iloc[0, 0]
-    total_charged = conn.query("SELECT COALESCE(SUM(amount), 0.0) FROM transactions WHERE type='شحن رصيد'", ttl="0").iloc[0, 0]
-    total_deducted_negative = conn.query("SELECT COALESCE(SUM(amount), 0.0) FROM transactions WHERE type='خصم توصيلة'", ttl="0").iloc[0, 0]
-    total_deliveries = conn.query("SELECT COUNT(*) FROM transactions WHERE type='خصم توصيلة'", ttl="0").iloc[0, 0]
+    # تم حذف ttl="0"
+    total_balance = conn.query("SELECT COALESCE(SUM(balance), 0.0) FROM drivers").iloc[0, 0]
+    total_charged = conn.query("SELECT COALESCE(SUM(amount), 0.0) FROM transactions WHERE type='شحن رصيد'").iloc[0, 0]
+    total_deducted_negative = conn.query("SELECT COALESCE(SUM(amount), 0.0) FROM transactions WHERE type='خصم توصيلة'").iloc[0, 0]
+    total_deliveries = conn.query("SELECT COUNT(*) FROM transactions WHERE type='خصم توصيلة'").iloc[0, 0]
     
     total_deducted = abs(total_deducted_negative)
     return total_balance, total_charged, total_deducted, total_deliveries
 
-# 🛑 تم تعديل هذه الدالة:
-# استخدام F-string آمن هنا لأنه يتم استخدامه لتكوين LIKE وليس كباراميتر نصي
+# 🛑 تم إضافة @st.cache_data
+@st.cache_data(ttl=60)
 def get_history(driver_id=None):
     conn = get_connection()
     if driver_id:
         # استخدام LIKE للبحث داخل الـ driver_name المسجل
         query = text("SELECT type as \"العملية\", amount as \"المبلغ\", timestamp as \"التوقيت\" FROM transactions WHERE driver_name LIKE :id_pattern ORDER BY id DESC")
-        df = conn.query(query, params={"id_pattern": f"%ID:{driver_id}%"}, ttl="0")
+        # تم حذف ttl="0"
+        df = conn.query(query, params={"id_pattern": f"%ID:{driver_id}%"})
     else:
         query = "SELECT driver_name as \"المندوب\", type as \"العملية\", amount as \"المبلغ\", timestamp as \"التوقيت\" FROM transactions ORDER BY id DESC"
-        df = conn.query(query, ttl="0")
+        # تم حذف ttl="0"
+        df = conn.query(query)
     return df
 
+# 🛑 تم إضافة @st.cache_data
+@st.cache_data(ttl=60)
 def get_all_drivers_details():
     conn = get_connection()
     # الاستعلام الأساسي لجلب كل السائقين
     query_drivers = "SELECT driver_id, name as \"الاسم\", bike_plate as \"رقم اللوحة\", whatsapp as \"واتساب\", balance as \"الرصيد\", is_active as \"الحالة\", notes as \"ملاحظات\" FROM drivers"
-    df = conn.query(query_drivers, ttl="0")
+    # تم حذف ttl="0"
+    df = conn.query(query_drivers)
     
-    deliveries_count_df = get_deliveries_count_per_driver()
-    
+    # هذه الدالة الآن مُعلَّمة بشكل صحيح وتعمل بسلاسة
+    deliveries_count_df = get_deliveries_count_per_driver() 
+
     if not deliveries_count_df.empty:
         df['driver_id'] = df['driver_id'].astype(str)
         deliveries_count_df['driver_id'] = deliveries_count_df['driver_id'].astype(str)
@@ -241,7 +247,7 @@ def get_all_drivers_details():
     else:
         df['عدد التوصيلات'] = 0
         
-    df['الحالة'] = df['الحالة'].apply(lambda x: 'مفعل' if x else 'معطل') # تم التعديل إلى if x ليتناسب مع True/False
+    df['الحالة'] = df['الحالة'].apply(lambda x: 'مفعل' if x else 'معطل')
     df.insert(0, 'ت', range(1, 1 + len(df)))
     df.rename(columns={'driver_id': 'الترقيم'}, inplace=True)
     cols = ['ت', 'الترقيم', 'الاسم', 'رقم اللوحة', 'واتساب', 'الرصيد', 'عدد التوصيلات', 'الحالة', 'ملاحظات']
@@ -282,7 +288,6 @@ if st.session_state['admin_mode']:
 
 elif st.session_state['logged_in_driver_id']:
     driver_id = st.session_state['logged_in_driver_id']
-    # استدعاء get_driver_info يعمل بشكل صحيح الآن
     driver_info = get_driver_info(driver_id)
     if driver_info:
         st.sidebar.markdown(f"**مرحباً، {driver_info['name']}**")
@@ -326,6 +331,7 @@ if current_menu == "واجهة المندوب":
                 st.metric(label="الرصيد المتوفر", value=f"{driver_data['balance']:.2f} أوقية", delta_color="off")
                 st.divider()
                 st.markdown("### سجل حركاتك الأخيرة")
+                # جلب السجل للمندوب المحدد
                 history_df = get_history(driver_id)
                 if not history_df.empty:
                     st.dataframe(history_df, use_container_width=True)
@@ -371,7 +377,6 @@ elif current_menu == "واجهة العمليات (الإدارة)":
         search_term_op = st.text_input("ابحث بالترقيم (ID) أو رقم الواتساب أو الاسم", key="search_op_input")
     with col_button:
         if st.button("بحث وتحديد", key="search_op_btn", type="primary"):
-            # search_driver يعمل الآن بالبحث الشامل
             driver_data = search_driver(search_term_op)
             if driver_data:
                 st.session_state['search_result_id'] = driver_data['driver_id']
@@ -384,7 +389,6 @@ elif current_menu == "واجهة العمليات (الإدارة)":
     
     if selected_id:
         info = get_driver_info(selected_id)
-        # قد يكون info فارغاً إذا تم حذفه
         if info:
             st.subheader(f"2. تفاصيل ورصيد المندوب: {info['name']}")
             balance = info['balance']
@@ -463,7 +467,6 @@ elif current_menu == "إدارة المندوبين (إضافة/تعديل)":
             search_term_edit = st.text_input("ابحث بالترقيم (ID) أو رقم الواتساب أو الاسم للتعديل", key="search_edit_input")
         with col_button_edit:
             if st.button("بحث وتحديد", key="search_edit_btn", type="primary"):
-                # search_driver يعمل الآن بشكل صحيح مع Caching والبحث الشامل
                 driver_data = search_driver(search_term_edit)
                 if driver_data:
                     st.session_state['search_result_id'] = driver_data['driver_id']
@@ -476,10 +479,9 @@ elif current_menu == "إدارة المندوبين (إضافة/تعديل)":
         
         if selected_id:
             conn = get_connection()
-            # استخدام query لجلب البيانات (مع تعديل get_driver_info لتجنب الخطأ)
             query = text("SELECT name, bike_plate, whatsapp, notes, is_active FROM drivers WHERE driver_id=:id")
-            # استخدام query مباشرة هنا لا يسبب خطأ Unhashable لأن params هو قاموس بسيط
-            info_df = conn.query(query, params={"id": selected_id}, ttl="0")
+            # تم حذف ttl="0"
+            info_df = conn.query(query, params={"id": selected_id})
             
             if not info_df.empty:
                 info_db = info_df.iloc[0].tolist()
@@ -526,6 +528,7 @@ elif current_menu == "التقارير وسجل العمليات":
     
     if report_type == "التقارير الإجمالية":
         st.subheader("ملخص إجمالي للنظام")
+        # هذه الدالة الآن مُعلَّمة بشكل صحيح وتعمل بسلاسة
         total_balance, total_charged, total_deducted, total_deliveries = get_totals()
         
         col_total_bal, col_total_charged, col_total_deducted, col_total_deliveries = st.columns(4)
@@ -569,7 +572,6 @@ elif current_menu == "التقارير وسجل العمليات":
             search_term_hist = st.text_input("ابحث بالترقيم (ID) أو رقم الواتساب أو الاسم", key="search_hist_input")
         with col_button_hist:
             if st.button("بحث وعرض السجل", key="search_hist_btn", type="primary"):
-                # search_driver يعمل الآن بالبحث الشامل
                 driver_data = search_driver(search_term_hist)
                 if driver_data:
                     st.session_state['search_result_id'] = driver_data['driver_id']
@@ -581,11 +583,11 @@ elif current_menu == "التقارير وسجل العمليات":
         selected_id = st.session_state['search_result_id']
         
         if selected_id:
-            # استخدام search_driver للحصول على الاسم (يعمل الآن بشكل صحيح)
             driver_name_data = search_driver(selected_id)
             if driver_name_data:
                 driver_name = driver_name_data['name']
                 st.markdown(f"**سجل حركات المندوب: {driver_name} (ID: {selected_id})**")
+                # جلب سجل مندوب معين
                 df = get_history(driver_id=selected_id)
                 
                 if not df.empty:
