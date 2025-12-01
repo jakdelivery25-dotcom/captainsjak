@@ -59,7 +59,7 @@ timestamp TEXT
 """))
 s.commit()
 
-# --- إدارة المندوبين ---
+# --- دوال إدارة المندوبين وشحن الرصيد ---
 
 def add_driver(driver_id, name, bike_plate, whatsapp, notes, is_active):
 conn = get_connection()
@@ -68,14 +68,7 @@ with conn.session as s:
 s.execute(text("""
 INSERT INTO drivers (driver_id, name, bike_plate, whatsapp, notes, is_active, balance)
 VALUES (:id, :name, :plate, :wa, :notes, :active, 0.0)
-"""), {
-"id": driver_id,
-"name": name,
-"plate": bike_plate,
-"wa": whatsapp,
-"notes": notes,
-"active": is_active
-})
+"""), {"id": driver_id, "name": name, "plate": bike_plate, "wa": whatsapp, "notes": notes, "active": is_active})
 s.commit()
 for fn in (get_driver_info, search_driver, get_all_drivers_details, get_totals):
 try: fn.clear()
@@ -95,14 +88,7 @@ with conn.session as s:
 s.execute(text("""
 UPDATE drivers SET name=:name, bike_plate=:plate, whatsapp=:wa, notes=:notes, is_active=:active
 WHERE driver_id=:id
-"""), {
-"name": name,
-"plate": bike_plate,
-"wa": whatsapp,
-"notes": notes,
-"active": is_active,
-"id": driver_id
-})
+"""), {"name": name, "plate": bike_plate, "wa": whatsapp, "notes": notes, "active": is_active, "id": driver_id})
 s.commit()
 for fn in (get_driver_info, get_all_drivers_details, get_totals, search_driver):
 try: fn.clear()
@@ -124,12 +110,7 @@ with conn.session as s:
     s.execute(text("""
         INSERT INTO transactions (driver_name, amount, type, timestamp)
         VALUES (:driver_name, :amount, :type, :timestamp)
-    """), {
-        "driver_name": f"{name} (ID:{driver_id})",
-        "amount": amount,
-        "type": trans_type,
-        "timestamp": timestamp
-    })
+    """), {"driver_name": f"{name} (ID:{driver_id})", "amount": amount, "type": trans_type, "timestamp": timestamp})
     s.commit()
 for fn in (get_driver_info, search_driver, get_all_drivers_details, get_totals, get_history, get_deliveries_count_per_driver):
     try: fn.clear()
@@ -164,11 +145,9 @@ return None
 def get_deliveries_count_per_driver():
 conn = get_connection()
 sql = """
-SELECT
-SUBSTR(driver_name, POSITION(':' IN driver_name)+1, LENGTH(driver_name)-POSITION(':' IN driver_name)-1) AS driver_id,
+SELECT SUBSTR(driver_name, POSITION(':' IN driver_name)+1, LENGTH(driver_name)-POSITION(':' IN driver_name)-1) AS driver_id,
 COUNT(*) AS deliveries_count
-FROM transactions
-WHERE type='خصم توصيلة'
+FROM transactions WHERE type='خصم توصيلة'
 GROUP BY 1
 """
 df = conn.query(sql)
@@ -177,30 +156,26 @@ return [{"driver_id": str(row['driver_id']), "عدد التوصيلات": int(ro
 
 def get_all_drivers_details():
 conn = get_connection()
-query_drivers = "SELECT driver_id, name as "الاسم", bike_plate as "رقم اللوحة", whatsapp as "واتساب", COALESCE(balance,0) as "الرصيد", is_active as "الحالة", notes as "ملاحظات" FROM drivers"
-df = conn.query(query_drivers)
-if df.empty:
-return pd.DataFrame(columns=['ت','الترقيم','الاسم','رقم اللوحة','واتساب','الرصيد','عدد التوصيلات','الحالة','ملاحظات'])
-
-```
+query = "SELECT driver_id, name as "الاسم", bike_plate as "رقم اللوحة", whatsapp as "واتساب", COALESCE(balance,0) as "الرصيد", is_active as "الحالة", notes as "ملاحظات" FROM drivers"
+df = conn.query(query)
+if df.empty: return pd.DataFrame(columns=['ت','الترقيم','الاسم','رقم اللوحة','واتساب','الرصيد','عدد التوصيلات','الحالة','ملاحظات'])
 deliveries_list = get_deliveries_count_per_driver()
 deliveries_df = pd.DataFrame(deliveries_list) if deliveries_list else pd.DataFrame(columns=['driver_id','عدد التوصيلات'])
 df['driver_id'] = df['driver_id'].astype(str)
 if not deliveries_df.empty:
-    deliveries_df['driver_id'] = deliveries_df['driver_id'].astype(str)
-    merged = pd.merge(df, deliveries_df, left_on='driver_id', right_on='driver_id', how='left')
-    merged['عدد التوصيلات'] = merged['عدد التوصيلات'].fillna(0).astype(int)
+deliveries_df['driver_id'] = deliveries_df['driver_id'].astype(str)
+merged = pd.merge(df, deliveries_df, left_on='driver_id', right_on='driver_id', how='left')
+merged['عدد التوصيلات'] = merged['عدد التوصيلات'].fillna(0).astype(int)
 else:
-    df['عدد التوصيلات'] = 0
-    merged = df
+df['عدد التوصيلات'] = 0
+merged = df
 merged['الحالة'] = merged['الحالة'].apply(lambda x: 'مفعل' if x else 'معطل')
-merged.insert(0, 'ت', range(1, 1 + len(merged)))
+merged.insert(0, 'ت', range(1, len(merged)+1))
 merged.rename(columns={'driver_id': 'الترقيم'}, inplace=True)
-cols = ['ت', 'الترقيم', 'الاسم', 'رقم اللوحة', 'واتساب', 'الرصيد', 'عدد التوصيلات', 'الحالة', 'ملاحظات']
+cols = ['ت','الترقيم','الاسم','رقم اللوحة','واتساب','الرصيد','عدد التوصيلات','الحالة','ملاحظات']
 for c in cols:
-    if c not in merged.columns: merged[c] = ""
+if c not in merged.columns: merged[c] = ""
 return merged[cols]
-```
 
 @st.cache_data(ttl=60)
 def get_totals():
@@ -225,43 +200,86 @@ return df
 
 st.set_page_config(page_title="نظام إدارة التوصيل", layout="wide", page_icon="🚚")
 st.title("🚚 نظام رصيد المندوبين")
-
 init_db()
 
 if 'logged_in_driver_id' not in st.session_state: st.session_state['logged_in_driver_id'] = None
 if 'admin_mode' not in st.session_state: st.session_state['admin_mode'] = False
 if 'search_result_id' not in st.session_state: st.session_state['search_result_id'] = None
 
-if os.path.exists(IMAGE_PATH):
-st.sidebar.image(IMAGE_PATH, use_column_width=True)
-st.sidebar.header("لوحة التحكم")
+# --- تسجيل دخول المشرف ---
 
-if st.session_state['admin_mode']:
-st.sidebar.markdown("**وضع المسؤول (ADMIN)**")
-menu_options = ["واجهة العمليات (الإدارة)", "إدارة المندوبين (إضافة/تعديل)", "التقارير وسجل العمليات", "إعدادات التطبيق (الشعار)", "الخروج من وضع المسؤول"]
-current_menu = st.sidebar.radio("القائمة", menu_options)
-if current_menu == "الخروج من وضع المسؤول":
-st.session_state['admin_mode'] = False
-st.session_state['search_result_id'] = None
-st.rerun()
-elif st.session_state['logged_in_driver_id']:
-driver_id = st.session_state['logged_in_driver_id']
-driver_info = get_driver_info(driver_id)
-if driver_info:
-st.sidebar.markdown(f"**مرحباً، {driver_info['name']}**")
-st.sidebar.button("خروج (Logout)", on_click=lambda: st.session_state.update(logged_in_driver_id=None, admin_mode=False, search_result_id=None))
-current_menu = "واجهة المندوب"
-else:
-st.session_state.logged_in_driver_id = None
-current_menu = "واجهة المندوب"
-else:
-current_menu = "واجهة المندوب"
-st.sidebar.divider()
-with st.sidebar.expander("مدخل المسؤول الإداري"):
-admin_key_input = st.text_input("أدخل المفتاح السري", type="password")
-if st.button("دخول المسؤول"):
-if admin_key_input == ADMIN_KEY:
+if not st.session_state['admin_mode']:
+password = st.text_input("🔑 أدخل كلمة مرور المشرف", type="password")
+if st.button("تسجيل الدخول"):
+if password == ADMIN_KEY:
 st.session_state['admin_mode'] = True
-st.rerun()
+st.success("تم تسجيل الدخول بنجاح! 🎉")
 else:
-st.error("المفتاح السري غير صحيح.")
+st.error("كلمة المرور غير صحيحة 🚫")
+else:
+st.success("مسجل كمشرف ✅")
+tab1, tab2, tab3, tab4 = st.tabs(["المندوبون", "شحن/خصم الرصيد", "التقارير", "البحث/التاريخ"])
+
+```
+# --- واجهة إدارة المندوبين ---
+with tab1:
+    st.subheader("إضافة / تعديل المندوبين")
+    col1, col2 = st.columns(2)
+    with col1:
+        driver_id = st.text_input("رقم المندوب (ID)")
+        name = st.text_input("الاسم")
+        bike_plate = st.text_input("رقم اللوحة")
+        whatsapp = st.text_input("واتساب")
+        notes = st.text_area("ملاحظات")
+        is_active = st.checkbox("مفعل", value=True)
+        if st.button("إضافة مندوب"):
+            add_driver(driver_id, name, bike_plate, whatsapp, notes, is_active)
+    with col2:
+        st.subheader("تحديث بيانات المندوب")
+        search_id = st.text_input("ابحث بالمندوب ID أو الاسم")
+        if st.button("بحث"):
+            info = search_driver(search_id)
+            if info:
+                st.session_state['search_result_id'] = info['driver_id']
+                st.success(f"تم العثور على المندوب: {info['name']}")
+            else:
+                st.error("لم يتم العثور على المندوب")
+        if st.session_state['search_result_id']:
+            drv = get_driver_info(st.session_state['search_result_id'])
+            new_name = st.text_input("الاسم", drv['name'])
+            new_bike = st.text_input("رقم اللوحة")
+            new_wa = st.text_input("واتساب")
+            new_notes = st.text_area("ملاحظات")
+            new_active = st.checkbox("مفعل", value=drv['is_active'])
+            if st.button("تحديث"):
+                update_driver_details(st.session_state['search_result_id'], new_name, new_bike, new_wa, new_notes, new_active)
+
+# --- واجهة شحن الرصيد وخصم التوصيلات ---
+with tab2:
+    st.subheader("شحن الرصيد وخصم التوصيلات")
+    selected_driver = st.text_input("أدخل ID المندوب")
+    amount = st.number_input("المبلغ", min_value=0.0, step=0.1)
+    if st.button("شحن الرصيد"):
+        new_bal = update_balance(selected_driver, amount, "شحن رصيد")
+        st.success(f"تم شحن الرصيد. الرصيد الجديد: {new_bal} أوقية")
+    if st.button("خصم توصيلة"):
+        new_bal = update_balance(selected_driver, -DEDUCTION_AMOUNT, "خصم توصيلة")
+        st.success(f"تم خصم {DEDUCTION_AMOUNT} أوقية. الرصيد الجديد: {new_bal} أوقية")
+
+# --- واجهة التقارير ---
+with tab3:
+    st.subheader("ملخص الحسابات")
+    total_balance, total_charged, total_deducted, total_deliveries = get_totals()
+    st.metric("إجمالي الرصيد الحالي", total_balance)
+    st.metric("إجمالي الرصيد المشحون", total_charged)
+    st.metric("إجمالي المبالغ المخصومة", total_deducted)
+    st.metric("إجمالي عدد التوصيلات", total_deliveries)
+    st.dataframe(get_all_drivers_details())
+
+# --- واجهة البحث والتاريخ ---
+with tab4:
+    st.subheader("سجل العمليات")
+    driver_hist_id = st.text_input("بحث حسب ID المندوب (اختياري)")
+    df_hist = get_history(driver_hist_id if driver_hist_id else None)
+    st.dataframe(df_hist)
+```
